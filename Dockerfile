@@ -22,4 +22,11 @@ COPY . .
 # Make entrypoint executable.
 RUN chmod +x run.sh
 
+# Copy profile templates into profiles/ so they're available at runtime.
+# Only copies if the file doesn't already exist (e.g., volume-mounted profiles).
+RUN for f in skills/templates/*.js; do \
+      name=$(basename "$f"); \
+      [ ! -f "profiles/$name" ] && cp "$f" "profiles/$name"; \
+    done; true
+
 ENTRYPOINT ["/stampede/run.sh"]
