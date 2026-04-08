@@ -23,15 +23,15 @@ const STEP = parseInt(__ENV.STAMPEDE_STEP || '1000');
 const HOLD = __ENV.STAMPEDE_HOLD || '30s';
 
 // Build escalating stages dynamically.
-const stages = [{ duration: '1m', target: 10 }];
-const levels = [50, 100, 200, 350];
-for (let vus = 500; vus <= MAX_VUS; vus += STEP) {
-  levels.push(vus);
+// Ramp quickly: STEP-sized jumps, each held for HOLD duration.
+const stages = [{ duration: '10s', target: Math.min(STEP, MAX_VUS) }];
+for (let vus = STEP * 2; vus <= MAX_VUS; vus += STEP) {
+  stages.push({ duration: HOLD, target: vus });
 }
-for (const level of levels.filter((v) => v <= MAX_VUS)) {
-  stages.push({ duration: '2m', target: level });
+if (stages[stages.length - 1].target < MAX_VUS) {
+  stages.push({ duration: HOLD, target: MAX_VUS });
 }
-stages.push({ duration: '30s', target: 0 });
+stages.push({ duration: '10s', target: 0 });
 
 export const options = {
   scenarios: {
