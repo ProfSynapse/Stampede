@@ -26,31 +26,47 @@ You are working in the Stampede load testing tool. Stampede uses k6 to run load 
 ## Running Tests
 
 ```bash
-# Local (requires k6 installed)
-k6 run patterns/smoke.js
+# CLI (preferred)
+./run.sh run --profile myapp --pattern smoke
+./run.sh run --profile myapp --pattern spike --max-vus 2000
+./run.sh list profiles
+./run.sh list patterns
 
-# Via run.sh (auto-activates profile)
-STAMPEDE_PROFILE=myapp STAMPEDE_PATTERN=smoke ./run.sh
+# Direct k6 (requires profile symlink)
+k6 run patterns/smoke.js
 
 # Docker
 docker build -t stampede -f Dockerfile .
-docker run --rm -e STAMPEDE_PROFILE=myapp -e STAMPEDE_PATTERN=smoke stampede
+docker run --rm stampede run --profile myapp --pattern smoke
 ```
 
-## Environment Variables
+## CLI Reference
+
+| Flag | Description |
+|------|-------------|
+| `--profile <name>` | Profile to activate (required) |
+| `--pattern <name>` | Pattern to run (required) |
+| `--max-vus <n>` | Override peak VU count |
+| `--duration <time>` | Override duration (e.g., `5m`, `30s`) |
+| `--base-url <url>` | Override profile's base URL |
+| `--auth-strategy <s>` | Override auth strategy |
+| `--step <n>` | Step size (breakpoint) |
+| `--hold <time>` | Hold duration per step |
+
+## Environment Variables (Secrets Only)
+
+Env vars are for secrets — never pass these as CLI args:
 
 | Variable | Description |
 |----------|-------------|
-| `STAMPEDE_PROFILE` | Profile name (used by `run.sh` to symlink `target.js`) |
-| `STAMPEDE_PATTERN` | Pattern name (used by `run.sh`) |
-| `STAMPEDE_MAX_VUS` | Override peak VU count |
-| `STAMPEDE_DURATION` | Override test duration |
-| `STAMPEDE_BASE_URL` | Override profile's base URL |
-| `STAMPEDE_AUTH_STRATEGY` | Override auth strategy (`form_login`, `hmac`, `api_key`, `bearer`, `none`) |
 | `EMAIL`, `PASSWORD` | Credentials for `form_login` auth |
-| `LESSON_ID`, `INST_DOMAIN`, `HMAC_SECRET` | Parameters for `hmac` auth |
+| `HMAC_SECRET` | HMAC secret key |
+| `ACCESS_TOKEN` | Pre-computed access token |
+| `LESSON_ID`, `INST_DOMAIN` | HMAC message parameters |
 | `API_KEY` | Key for `api_key` auth |
 | `AUTH_TOKEN` | Token for `bearer` auth |
+
+`STAMPEDE_*` env vars (`STAMPEDE_PROFILE`, `STAMPEDE_PATTERN`, `STAMPEDE_MAX_VUS`, etc.) still work as fallbacks but CLI args take precedence.
 
 ## File Editing Guidelines
 

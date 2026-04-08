@@ -23,26 +23,41 @@ bash .claude/skills/stampede/scripts/setup.sh --docker
 
 ### Run
 
-Execute a load test pattern against the active profile.
+Execute a load test pattern against a profile.
 
 ```bash
-bash .claude/skills/stampede/scripts/run.sh <pattern> [options]
+# Via skill script
+bash .claude/skills/stampede/scripts/run.sh <pattern> --profile <name> [options]
+
+# Or directly via the CLI
+./run.sh run --profile <name> --pattern <pattern> [options]
 ```
 
 **Arguments:**
 - `pattern` — One of: `smoke`, `stress`, `spike`, `breakpoint`, `school-bell`, `concurrency`
 
 **Options:**
-- `--profile <name>` — Profile to use (default: last activated)
+- `--profile <name>` — Profile to use (required)
 - `--max-vus <n>` — Override max VUs
 - `--duration <time>` — Override duration (e.g., `5m`, `30s`)
 - `--base-url <url>` — Override target URL
 - `--auth <strategy>` — Override auth strategy
+- `--step <n>` — Step size (breakpoint pattern)
+- `--hold <time>` — Hold duration per step
 - `--docker` — Run in Docker instead of locally
+
+### List
+
+Show available profiles and patterns.
+
+```bash
+./run.sh list profiles
+./run.sh list patterns
+```
 
 ### Status
 
-Check available profiles, patterns, and recent test results.
+Check available profiles, patterns, and Docker/k6 status.
 
 ```bash
 bash .claude/skills/stampede/scripts/status.sh

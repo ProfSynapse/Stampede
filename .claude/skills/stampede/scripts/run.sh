@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
 # stampede skill: run
-# Execute a load test pattern against the active (or specified) profile.
+# Execute a load test pattern against a profile via the Stampede CLI.
 #
 # Usage:
 #   run.sh <pattern> [options]
 #
 # Options:
-#   --profile <name>     Profile to activate (default: current target)
+#   --profile <name>     Profile to use (default: current target)
 #   --max-vus <n>        Override max VUs
 #   --duration <time>    Override duration (e.g., 5m, 30s)
 #   --base-url <url>     Override target URL
 #   --auth <strategy>    Override auth strategy
+#   --step <n>           Override step size (breakpoint)
+#   --hold <time>        Override hold duration per step
 #   --docker             Run in Docker container
 #
 # Examples:
-#   run.sh smoke
+#   run.sh smoke --profile myapp
 #   run.sh spike --profile myapp --max-vus 2000
 #   run.sh stress --docker --profile myapp
 
@@ -31,6 +33,8 @@ MAX_VUS=""
 DURATION=""
 BASE_URL=""
 AUTH_STRATEGY=""
+STEP=""
+HOLD=""
 USE_DOCKER=false
 
 while [[ $# -gt 0 ]]; do
@@ -40,6 +44,8 @@ while [[ $# -gt 0 ]]; do
     --duration)   DURATION="$2"; shift 2 ;;
     --base-url)   BASE_URL="$2"; shift 2 ;;
     --auth)       AUTH_STRATEGY="$2"; shift 2 ;;
+    --step)       STEP="$2"; shift 2 ;;
+    --hold)       HOLD="$2"; shift 2 ;;
     --docker)     USE_DOCKER=true; shift ;;
     -*)           echo "Unknown option: $1"; exit 1 ;;
     *)
@@ -57,7 +63,8 @@ if [[ -z "$PATTERN" ]]; then
   echo "Usage: run.sh <pattern> [options]"
   echo ""
   echo "Available patterns:"
-  ls -1 "$STAMPEDE_DIR/patterns/" | sed 's/\.js$//' | sed 's/^/  /'
+  "$STAMPEDE_DIR/run.sh" list patterns 2>/dev/null | grep "^  " || \
+    ls -1 "$STAMPEDE_DIR/patterns/" | sed 's/\.js$//' | sed 's/^/  /'
   echo ""
   echo "Options:"
   echo "  --profile <name>     Profile to use"
@@ -65,76 +72,43 @@ if [[ -z "$PATTERN" ]]; then
   echo "  --duration <time>    Override duration"
   echo "  --base-url <url>     Override target URL"
   echo "  --auth <strategy>    Override auth strategy"
+  echo "  --step <n>           Step size (breakpoint)"
+  echo "  --hold <time>        Hold duration per step"
   echo "  --docker             Run in Docker"
   exit 1
 fi
 
-PATTERN_FILE="$STAMPEDE_DIR/patterns/${PATTERN}.js"
-if [[ ! -f "$PATTERN_FILE" ]]; then
-  echo "ERROR: Pattern not found: $PATTERN"
-  echo "Available patterns:"
-  ls -1 "$STAMPEDE_DIR/patterns/" | sed 's/\.js$//' | sed 's/^/  /'
-  exit 1
-fi
+# -- Build CLI args for run.sh ------------------------------------------------
 
-# -- Activate profile ---------------------------------------------------------
-
-if [[ -n "$PROFILE" ]]; then
-  PROFILE_FILE="$STAMPEDE_DIR/profiles/${PROFILE}.js"
-  if [[ ! -f "$PROFILE_FILE" ]]; then
-    echo "ERROR: Profile not found: $PROFILE"
-    echo "Available profiles:"
-    ls -1 "$STAMPEDE_DIR/profiles/" | grep -v '^_' | grep -v '^target' | sed 's/\.js$//' | sed 's/^/  /'
-    exit 1
-  fi
-  ln -sf "${PROFILE}.js" "$STAMPEDE_DIR/profiles/target.js"
-  echo "[stampede] Activated profile: $PROFILE"
-fi
-
-# Check that target.js exists.
-if [[ ! -f "$STAMPEDE_DIR/profiles/target.js" ]]; then
-  echo "ERROR: No active profile. Run setup.sh first or use --profile."
-  exit 1
-fi
-
-# -- Build env var args -------------------------------------------------------
-
-ENV_ARGS=""
-[[ -n "$MAX_VUS" ]] && ENV_ARGS="$ENV_ARGS -e STAMPEDE_MAX_VUS=$MAX_VUS"
-[[ -n "$DURATION" ]] && ENV_ARGS="$ENV_ARGS -e STAMPEDE_DURATION=$DURATION"
-[[ -n "$BASE_URL" ]] && ENV_ARGS="$ENV_ARGS -e STAMPEDE_BASE_URL=$BASE_URL"
-[[ -n "$AUTH_STRATEGY" ]] && ENV_ARGS="$ENV_ARGS -e STAMPEDE_AUTH_STRATEGY=$AUTH_STRATEGY"
-
-# Forward common auth env vars if set.
-for var in EMAIL PASSWORD LESSON_ID INST_DOMAIN HMAC_SECRET ACCESS_TOKEN API_KEY AUTH_TOKEN; do
-  if [[ -n "${!var:-}" ]]; then
-    ENV_ARGS="$ENV_ARGS -e $var=${!var}"
-  fi
-done
+RUN_ARGS="run --pattern $PATTERN"
+[[ -n "$PROFILE" ]]       && RUN_ARGS="$RUN_ARGS --profile $PROFILE"
+[[ -n "$MAX_VUS" ]]       && RUN_ARGS="$RUN_ARGS --max-vus $MAX_VUS"
+[[ -n "$DURATION" ]]      && RUN_ARGS="$RUN_ARGS --duration $DURATION"
+[[ -n "$BASE_URL" ]]      && RUN_ARGS="$RUN_ARGS --base-url $BASE_URL"
+[[ -n "$AUTH_STRATEGY" ]] && RUN_ARGS="$RUN_ARGS --auth-strategy $AUTH_STRATEGY"
+[[ -n "$STEP" ]]          && RUN_ARGS="$RUN_ARGS --step $STEP"
+[[ -n "$HOLD" ]]          && RUN_ARGS="$RUN_ARGS --hold $HOLD"
 
 # -- Run ----------------------------------------------------------------------
 
-echo ""
-echo "[stampede] Running: $PATTERN"
-echo "[stampede] Profile: $(readlink "$STAMPEDE_DIR/profiles/target.js" 2>/dev/null || echo 'target.js')"
-[[ -n "$MAX_VUS" ]] && echo "[stampede] Max VUs: $MAX_VUS"
-[[ -n "$DURATION" ]] && echo "[stampede] Duration: $DURATION"
-echo ""
-
 if [[ "$USE_DOCKER" == true ]]; then
+  # Build Docker env args for secrets only.
   DOCKER_ENV=""
-  [[ -n "$PROFILE" ]] && DOCKER_ENV="$DOCKER_ENV -e STAMPEDE_PROFILE=$PROFILE"
-  [[ -n "$MAX_VUS" ]] && DOCKER_ENV="$DOCKER_ENV -e STAMPEDE_MAX_VUS=$MAX_VUS"
-  [[ -n "$DURATION" ]] && DOCKER_ENV="$DOCKER_ENV -e STAMPEDE_DURATION=$DURATION"
-  [[ -n "$BASE_URL" ]] && DOCKER_ENV="$DOCKER_ENV -e STAMPEDE_BASE_URL=$BASE_URL"
-  [[ -n "$AUTH_STRATEGY" ]] && DOCKER_ENV="$DOCKER_ENV -e STAMPEDE_AUTH_STRATEGY=$AUTH_STRATEGY"
+  for var in EMAIL PASSWORD HMAC_SECRET ACCESS_TOKEN LESSON_ID INST_DOMAIN API_KEY AUTH_TOKEN; do
+    if [[ -n "${!var:-}" ]]; then
+      DOCKER_ENV="$DOCKER_ENV -e $var=${!var}"
+    fi
+  done
+
+  echo "[stampede] Running in Docker: $PATTERN"
 
   # shellcheck disable=SC2086
   docker run --rm $DOCKER_ENV \
-    -e STAMPEDE_PATTERN="$PATTERN" \
     -v "$STAMPEDE_DIR/profiles:/stampede/profiles" \
-    stampede
+    stampede $RUN_ARGS
 else
+  echo "[stampede] Running: $PATTERN"
+
   # shellcheck disable=SC2086
-  k6 run $ENV_ARGS "$PATTERN_FILE"
+  "$STAMPEDE_DIR/run.sh" $RUN_ARGS
 fi
