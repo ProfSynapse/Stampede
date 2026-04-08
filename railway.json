@@ -4,7 +4,7 @@
     "dockerfilePath": "Dockerfile"
   },
   "deploy": {
-    "startCommand": "./run.sh run --profile coursecast --pattern school-bell --max-vus 10000 --auth-strategy hmac",
+    "startCommand": "./run.sh run --profile coursecast --pattern breakpoint --max-vus 20000 --step 2500 --hold 20s --auth-strategy hmac",
     "restartPolicyType": "NEVER",
     "numReplicas": 1,
     "healthcheckPath": null

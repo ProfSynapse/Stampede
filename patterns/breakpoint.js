@@ -13,9 +13,10 @@
 
 import http from 'k6/http';
 import { check, sleep } from 'k6';
-import profile from '../profiles/target.js';
+import profile, { contentPath } from '../profiles/target.js';
 import { authenticate } from '../lib/auth.js';
 import { trackResponse } from '../lib/metrics.js';
+import { urlWithParams } from '../lib/http.js';
 import { extractLiveViewProps, connectLiveView } from '../lib/websocket.js';
 
 const MAX_VUS = parseInt(__ENV.STAMPEDE_MAX_VUS || '500');
@@ -51,43 +52,58 @@ export const options = {
 export default function () {
   const authState = authenticate(profile);
 
-  // Hit a random authenticated page.
-  const pages = profile.endpoints.admin || profile.endpoints.public || [];
-  const page = pages[Math.floor(Math.random() * pages.length)];
-  if (!page) {
-    sleep(2);
-    return;
-  }
+  if (profile.auth.strategy === 'hmac' || __ENV.STAMPEDE_AUTH_STRATEGY === 'hmac') {
+    // HMAC auth — hit content endpoints (SCORM).
+    const indexUrl = urlWithParams(
+      `${profile.baseUrl}${contentPath(profile.endpoints.content.index)}`,
+      authState.params
+    );
+    const start = Date.now();
+    const res = http.get(indexUrl, { redirects: 5, headers: authState.headers });
+    trackResponse(res, start);
+    check(res, {
+      'status is 2xx': (r) => r.status >= 200 && r.status < 300,
+      'not 502': (r) => r.status !== 502,
+      'not 503': (r) => r.status !== 503,
+    });
+  } else {
+    // Form login auth — hit admin/public pages + optional WebSocket.
+    const pages = profile.endpoints.admin || profile.endpoints.public || [];
+    const page = pages[Math.floor(Math.random() * pages.length)];
+    if (!page) {
+      sleep(2);
+      return;
+    }
 
-  const start = Date.now();
-  const pageRes = http.get(`${profile.baseUrl}${page}`, {
-    headers: authState.headers,
-  });
-  trackResponse(pageRes, start);
-  check(pageRes, { 'page loaded': (r) => r.status === 200 });
+    const start = Date.now();
+    const pageRes = http.get(`${profile.baseUrl}${page}`, {
+      headers: authState.headers,
+    });
+    trackResponse(pageRes, start);
+    check(pageRes, { 'page loaded': (r) => r.status === 200 });
 
-  // Attempt LiveView WebSocket connection (if profile supports it).
-  if (profile.liveview) {
-    const props = extractLiveViewProps(pageRes.body);
-    if (props) {
-      const wsUrl = `${profile.wsUrl}${profile.liveview.websocketPath}?vsn=${profile.liveview.vsn}&_csrf_token=${encodeURIComponent(props.csrfToken)}`;
-      const wsHeaders = {};
-      if (authState.cookies) {
-        wsHeaders['Cookie'] = authState.cookies;
+    if (profile.liveview) {
+      const props = extractLiveViewProps(pageRes.body);
+      if (props) {
+        const wsUrl = `${profile.wsUrl}${profile.liveview.websocketPath}?vsn=${profile.liveview.vsn}&_csrf_token=${encodeURIComponent(props.csrfToken)}`;
+        const wsHeaders = {};
+        if (authState.cookies) {
+          wsHeaders['Cookie'] = authState.cookies;
+        }
+
+        connectLiveView({
+          wsUrl,
+          headers: wsHeaders,
+          topic: `lv:${props.phxId}`,
+          joinPayload: {
+            url: `${profile.baseUrl}${page}`,
+            params: { _csrf_token: props.csrfToken, _mounts: 0 },
+            session: props.phxSession,
+            static: props.phxStatic,
+          },
+          holdDuration: 90000,
+        });
       }
-
-      connectLiveView({
-        wsUrl,
-        headers: wsHeaders,
-        topic: `lv:${props.phxId}`,
-        joinPayload: {
-          url: `${profile.baseUrl}${page}`,
-          params: { _csrf_token: props.csrfToken, _mounts: 0 },
-          session: props.phxSession,
-          static: props.phxStatic,
-        },
-        holdDuration: 90000,
-      });
     }
   }
 
