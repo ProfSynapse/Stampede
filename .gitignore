@@ -1,0 +1,15 @@
+# Stampede .gitignore
+
+# Project-specific profiles (contain credentials and target-specific config).
+# Only profiles/example.js and profiles/_base.js are tracked — all others are local.
+profiles/*
+!profiles/example.js
+!profiles/_base.js
+
+# Environment files
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
